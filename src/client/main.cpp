@@ -106,41 +106,49 @@ int main(int const argc, char** const argv) {
     static constexpr auto screen_width = 800;
     static constexpr auto screen_height = 450;
 
-    auto circle_x = screen_width / 2;
-    auto circle_y = screen_height / 2;
+    auto circle_x = screen_width / 2.0;
+    auto circle_y = screen_height / 2.0;
 
     auto last_send_time = std::chrono::steady_clock::now();
 
-    InitWindow(screen_width, screen_height, "raylib Example");
-    SetTargetFPS(60);
+    InitWindow(screen_width, screen_height, "sockets test");
+    // SetTargetFPS(60);
 
     auto update_thread = std::jthread(read_incoming_positions, std::ref(connection));
 
+    auto last_time = GetTime();
     while (!WindowShouldClose()) {
+        auto const delta = [&]() {
+            auto const current_time = GetTime();
+            auto const result = current_time - last_time;
+            last_time = current_time;
+            return result;
+        }();
+        static constexpr auto pixels_per_second = 100.0;
         if (IsKeyDown(KEY_RIGHT)) {
-            circle_x += 2;
+            circle_x += pixels_per_second * delta;
         }
         if (IsKeyDown(KEY_LEFT)) {
-            circle_x -= 2;
+            circle_x -= pixels_per_second * delta;
         }
         if (IsKeyDown(KEY_UP)) {
-            circle_y -= 2;
+            circle_y -= pixels_per_second * delta;
         }
         if (IsKeyDown(KEY_DOWN)) {
-            circle_y += 2;
+            circle_y += pixels_per_second * delta;
         }
 
         auto const current_time = std::chrono::steady_clock::now();
-        auto const elapsed =
+        auto const elapsed_milliseconds =
             std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_send_time).count();
-        if (elapsed >= 100) {
-            send_position(connection, circle_x, circle_y);
+        if (elapsed_milliseconds >= 100) {
+            send_position(connection, static_cast<int>(circle_x), static_cast<int>(circle_y));
             last_send_time = current_time;
         }
 
         BeginDrawing();
         ClearBackground(RAYWHITE);
-        DrawCircle(circle_x, circle_y, 20, DARKBLUE);
+        DrawCircle(static_cast<int>(circle_x), static_cast<int>(circle_y), 20, DARKBLUE);
 
         {
             auto lock = std::scoped_lock{ positions_mutex };
