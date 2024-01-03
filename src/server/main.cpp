@@ -37,14 +37,18 @@ static void handle_client(c2k::ClientSocket client, int const id) {
                 auto lock = std::scoped_lock{ positions_mutex };
                 client_positions[id] = position;
             }
-            std::ranges::rotate(receive_buffer, receive_buffer.begin() + first_eight_bytes.size());
+            std::rotate(
+                receive_buffer.begin(),
+                receive_buffer.begin() + first_eight_bytes.size(),
+                receive_buffer.end()
+            );
             receive_buffer.resize(receive_buffer.size() - first_eight_bytes.size());
 
             auto send_buffer = std::vector<std::byte>{};
             {
                 auto lock = std::scoped_lock{ positions_mutex };
                 auto const num_positions = static_cast<int>(client_positions.size() - 1);
-                send_buffer.resize(4 + num_positions * (4 + 4 + 4));
+                send_buffer.resize(4 + static_cast<std::size_t>(num_positions) * (4 + 4 + 4));
                 std::memcpy(send_buffer.data(), &num_positions, 4);
                 auto offset = std::size_t{ 4 };
                 for (auto const& [client_id, client_position] : client_positions) {

@@ -53,7 +53,7 @@ static void read_incoming_positions(std::stop_token const& stop_token, c2k::Clie
             auto num_positions = 0;
             std::memcpy(&num_positions, buffer.data(), 4);
             auto const packet_size = 4 + num_positions * 3 * 4;
-            while (buffer.size() < packet_size) {
+            while (buffer.size() < static_cast<std::size_t>(packet_size)) {
                 if (stop_token.stop_requested()) {
                     return;
                 }
@@ -62,9 +62,9 @@ static void read_incoming_positions(std::stop_token const& stop_token, c2k::Clie
             }
             // std::cout << "received positions of " << num_positions << " clients\n";
             auto clients_received = std::vector<int>{};
-            clients_received.reserve(num_positions);
+            clients_received.reserve(static_cast<std::size_t>(num_positions));
             // discard first four bytes
-            std::ranges::rotate(buffer, buffer.begin() + 4);
+            std::rotate(buffer.begin(), buffer.begin() + 4, buffer.end());
             buffer.resize(buffer.size() - 4);
             for (auto i = 0; i < num_positions; ++i) {
                 assert(buffer.size() >= 12);
@@ -74,7 +74,7 @@ static void read_incoming_positions(std::stop_token const& stop_token, c2k::Clie
                 std::memcpy(&client_id, buffer.data(), 4);
                 std::memcpy(&x, buffer.data() + 4, 4);
                 std::memcpy(&y, buffer.data() + 8, 4);
-                std::ranges::rotate(buffer, buffer.begin() + 12);
+                std::rotate(buffer.begin(), buffer.begin() + 12, buffer.end());
                 buffer.resize(buffer.size() - 12);
                 auto lock = std::scoped_lock{ positions_mutex };
                 client_positions[client_id] = std::pair{ x, y };
@@ -145,7 +145,7 @@ int main(int const argc, char** const argv) {
         {
             auto lock = std::scoped_lock{ positions_mutex };
             for (auto const& [client_id, client_position] : client_positions) {
-                auto const color = colors.at(client_id % colors.size());
+                auto const color = colors.at(static_cast<std::size_t>(client_id) % colors.size());
                 DrawCircle(client_position.first, client_position.second, 20, color);
             }
         }
