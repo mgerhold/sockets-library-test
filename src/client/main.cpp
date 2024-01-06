@@ -1,66 +1,39 @@
-#include <cstdint>
-#include <iostream>
-#include <raylib.h>
-#include <string>
-#include <sockets/socket_lib.hpp>
-#include <vector>
-#include <cstddef>
-#include <chrono>
-#include <cstring>
-#include <thread>
-#include <mutex>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <mutex>
+#include <raylib.h>
+#include <sockets/sockets.hpp>
+#include <string>
+#include <thread>
+#include <vector>
 
-static constexpr auto colors = std::array{
-        RED,
-        GREEN,
-        BLUE,
-        YELLOW,
-        PURPLE,
-        LIME,
-        GOLD,
-        SKYBLUE,
-        ORANGE,
-        PINK
-    };
-
-static void send_position(c2k::ClientSocket& socket, int const x, int const y) {
-    static_assert(sizeof(x) == 4);
-    static_assert(sizeof(y) == 4);
-    auto buffer = std::vector<std::byte>{};
-    buffer.resize(8);
-    std::memcpy(buffer.data(), &x, 4);
-    std::memcpy(buffer.data() + 4, &y, 4);
-    std::ignore = socket.send(std::move(buffer));
-}
+static constexpr auto colors = std::array{ RED, GREEN, BLUE, YELLOW, PURPLE, LIME, GOLD, SKYBLUE, ORANGE, PINK };
 
 static std::mutex positions_mutex;
 static std::unordered_map<int, std::pair<int, int>> client_positions;
 
 static void read_incoming_positions(std::stop_token const& stop_token, c2k::ClientSocket& socket) {
     auto buffer = std::vector<std::byte>{};
-    while (not stop_token.stop_requested()) {
-        auto future = socket.receive(512);
-        static constexpr auto timeout = std::chrono::milliseconds{ 100 };
-        while (future.wait_for(timeout) == std::future_status::timeout) {
-            if (stop_token.stop_requested()) {
-                return;
-            }
-        }
-        auto received_data = future.get();
+    while (socket.is_connected() and not stop_token.stop_requested()) {
+        auto received_data = socket.receive(4096).get();
         buffer.insert(buffer.end(), received_data.begin(), received_data.end());
-        if (buffer.size() >= 4) {
+        while (buffer.size() >= 4) {
             auto num_positions = 0;
             std::memcpy(&num_positions, buffer.data(), 4);
             auto const packet_size = 4 + num_positions * 3 * 4;
-            while (buffer.size() < static_cast<std::size_t>(packet_size)) {
+            while (socket.is_connected() and buffer.size() < static_cast<std::size_t>(packet_size)) {
                 if (stop_token.stop_requested()) {
                     return;
                 }
-                received_data = socket.receive(512).get();
+                received_data = socket.receive(4096).get();
                 buffer.insert(buffer.end(), received_data.begin(), received_data.end());
             }
-            // std::cout << "received positions of " << num_positions << " clients\n";
+            // std::cout << std::format("received positions of {} clients\n", num_positions);
             auto clients_received = std::vector<int>{};
             clients_received.reserve(static_cast<std::size_t>(num_positions));
             // discard first four bytes
@@ -80,15 +53,24 @@ static void read_incoming_positions(std::stop_token const& stop_token, c2k::Clie
                 client_positions[client_id] = std::pair{ x, y };
                 clients_received.push_back(client_id);
             }
-            std::erase_if(
-                client_positions,
-                [&](auto const& pair) {
-                    auto const find_iterator = std::ranges::find(clients_received, pair.first);
-                    return find_iterator == clients_received.cend();
-                }
-            );
+            std::erase_if(client_positions, [&](auto const& pair) {
+                auto const find_iterator = std::ranges::find(clients_received, pair.first);
+                return find_iterator == clients_received.cend();
+            });
         }
     }
+}
+
+static void send_position(c2k::ClientSocket& socket, std::pair<double, double> position) {
+    auto const x = static_cast<int>(position.first);
+    auto const y = static_cast<int>(position.second);
+    static_assert(sizeof(x) == 4);
+    static_assert(sizeof(y) == 4);
+    auto buffer = std::vector<std::byte>{};
+    buffer.resize(8);
+    std::memcpy(buffer.data(), &x, 4);
+    std::memcpy(buffer.data() + 4, &y, 4);
+    std::ignore = socket.send(std::move(buffer));
 }
 
 int main(int const argc, char** const argv) {
@@ -100,19 +82,17 @@ int main(int const argc, char** const argv) {
     auto const ip_address = std::string{ argv[1] };
     auto const port = static_cast<uint16_t>(std::stoi(argv[2]));
 
-    auto connection = c2k::SocketLib::create_client_socket(c2k::AddressFamily::Unspecified, ip_address, port);
+    auto connection = c2k::Sockets::create_client(c2k::AddressFamily::Unspecified, ip_address, port);
     std::cout << "connected to server\n";
 
     static constexpr auto screen_width = 800;
     static constexpr auto screen_height = 450;
 
-    auto circle_x = screen_width / 2.0;
-    auto circle_y = screen_height / 2.0;
-
-    auto last_send_time = std::chrono::steady_clock::now();
+    auto circle_x = static_cast<double>(screen_width) / 2.0;
+    auto circle_y = static_cast<double>(screen_height) / 2.0;
 
     InitWindow(screen_width, screen_height, "sockets test");
-    // SetTargetFPS(60);
+    SetTargetFPS(60);
 
     auto update_thread = std::jthread(read_incoming_positions, std::ref(connection));
 
@@ -138,17 +118,10 @@ int main(int const argc, char** const argv) {
             circle_y += pixels_per_second * delta;
         }
 
-        auto const current_time = std::chrono::steady_clock::now();
-        auto const elapsed_milliseconds =
-            std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_send_time).count();
-        if (elapsed_milliseconds >= 100) {
-            send_position(connection, static_cast<int>(circle_x), static_cast<int>(circle_y));
-            last_send_time = current_time;
-        }
+        send_position(connection, { circle_x, circle_y });
 
         BeginDrawing();
-        ClearBackground(RAYWHITE);
-        DrawCircle(static_cast<int>(circle_x), static_cast<int>(circle_y), 20, DARKBLUE);
+        ClearBackground(CLITERAL(Color){ 36, 39, 58, 255 });
 
         {
             auto lock = std::scoped_lock{ positions_mutex };

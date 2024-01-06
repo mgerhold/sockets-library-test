@@ -51,6 +51,8 @@ function(set_warnings target_name warnings_as_errors)
             -Wduplicated-branches # warn if if / else branches have duplicated code
             -Wlogical-op # warn about logical operations being used where bitwise were probably wanted
             -Wno-useless-cast # warn if you perform a cast to the same type
+            -Wno-stringop-overflow
+            -Wno-array-bounds
     )
 
     if (warnings_as_errors)

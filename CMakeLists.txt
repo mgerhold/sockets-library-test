@@ -3,9 +3,10 @@ project(network_test)
 
 set(CMAKE_CXX_STANDARD 23)
 
-include(dependencies.cmake)
-setup_dependencies()
+include(${PROJECT_SOURCE_DIR}/project_options.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/system_link.cmake)
 
-include(project_options.cmake)
+include(${PROJECT_SOURCE_DIR}/dependencies.cmake)
+setup_dependencies()
 
 add_subdirectory(src)

@@ -9,6 +9,10 @@ function(setup_dependencies)
     CPMAddPackage(
             NAME C2K_SOCKETS
             GITHUB_REPOSITORY mgerhold/sockets
-            VERSION 0.1.2
+            VERSION 0.1.6
+            OPTIONS
+            "enable_thread_sanitizer ${enable_thread_sanitizer}"
+            "enable_address_sanitizer ${enable_address_sanitizer}"
+            "enable_undefined_behavior_sanitizer ${enable_undefined_behavior_sanitizer}"
     )
 endfunction()
