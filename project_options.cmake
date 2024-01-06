@@ -32,6 +32,7 @@ else ()
     option(enable_thread_sanitizer "Enable thread sanitizer" OFF)
     option(build_examples "Build example server and client applications" OFF)
 endif ()
+option(build_client "Build the client application (depends on raylib)" ON)
 
 add_library(warnings INTERFACE)
 set_warnings(warnings ${warnings_as_errors})
