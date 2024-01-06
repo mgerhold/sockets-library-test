@@ -79,11 +79,11 @@ static void broadcast_positions() {
             auto lock = std::scoped_lock{ clients_mutex };
             for (auto const& [id, connection] : active_clients) {
                 // std::cout << std::format("sending {} positions to client {}\n", (send_buffer.size() - 4) / 3 / 4, id);
-                connection->send(send_buffer).wait();
+                std::ignore = connection->send(send_buffer);
             }
         }
 
-        //std::this_thread::sleep_for(std::chrono::milliseconds(17));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
