@@ -1,14 +1,14 @@
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <format>
 #include <future>
 #include <iostream>
-#include <thread>
-#include <sockets/sockets.hpp>
-#include <atomic>
-#include <unordered_map>
 #include <mutex>
-#include <cstring>
-#include <chrono>
-#include <format>
+#include <sockets/sockets.hpp>
+#include <thread>
+#include <unordered_map>
 
 static std::pair<int, int> extract_position(std::array<std::byte, 8> const& bytes) {
     auto x = 0;
@@ -42,9 +42,9 @@ static void receive_client_positions(int const id, c2k::ClientSocket& client) {
                 client_positions[id] = position;
             }
             std::rotate(
-                receive_buffer.begin(),
-                receive_buffer.begin() + first_eight_bytes.size(),
-                receive_buffer.end()
+                    receive_buffer.begin(),
+                    receive_buffer.begin() + first_eight_bytes.size(),
+                    receive_buffer.end()
             );
             receive_buffer.resize(receive_buffer.size() - first_eight_bytes.size());
         }
@@ -87,26 +87,24 @@ static void broadcast_positions() {
     }
 }
 
-int main() {
+int main() try {
     auto next_client_id = std::atomic_int{ 0 };
     auto receive_thread = std::jthread{ broadcast_positions };
     auto server = c2k::Sockets::create_server(
-        c2k::AddressFamily::Unspecified,
-        12345,
-        [&next_client_id](c2k::ClientSocket client_connection) {
-            auto lock = std::scoped_lock{ clients_mutex };
-            auto const current_client_id = next_client_id++;
-            std::cout << "client with id " << current_client_id << " connected\n";
-            auto socket = std::make_unique<c2k::ClientSocket>(std::move(client_connection));
-            std::jthread{
-                    receive_client_positions,
-                    current_client_id,
-                    std::ref(*socket)
-                }.detach();
-            active_clients[current_client_id] = std::move(socket);
-        }
+            c2k::AddressFamily::Unspecified,
+            12345,
+            [&next_client_id](c2k::ClientSocket client_connection) {
+                auto lock = std::scoped_lock{ clients_mutex };
+                auto const current_client_id = next_client_id++;
+                std::cout << "client with id " << current_client_id << " connected\n";
+                auto socket = std::make_unique<c2k::ClientSocket>(std::move(client_connection));
+                std::jthread{ receive_client_positions, current_client_id, std::ref(*socket) }.detach();
+                active_clients[current_client_id] = std::move(socket);
+            }
     );
     std::cout << "listening for incoming client connections...\n";
 
     std::promise<void>{}.get_future().wait();
+} catch (std::runtime_error const& e) {
+    std::cerr << "error: " << e.what() << '\n';
 }

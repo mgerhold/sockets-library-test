@@ -73,7 +73,7 @@ static void send_position(c2k::ClientSocket& socket, std::pair<double, double> p
     std::ignore = socket.send(std::move(buffer));
 }
 
-int main(int const argc, char** const argv) {
+int main(int const argc, char** const argv) try {
     if (argc != 3) {
         std::cout << "Usage: " << argv[0] << " [ip adress] [port]\n";
         return EXIT_FAILURE;
@@ -135,4 +135,6 @@ int main(int const argc, char** const argv) {
     }
     update_thread.request_stop();
     CloseWindow();
+} catch (std::runtime_error const& e) {
+    std::cerr << "error: " << e.what() << '\n';
 }
