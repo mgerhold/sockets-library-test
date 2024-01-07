@@ -18,38 +18,23 @@ static std::mutex positions_mutex;
 static std::unordered_map<int, std::pair<int, int>> client_positions;
 
 static void read_incoming_positions(std::stop_token const& stop_token, c2k::ClientSocket& socket) {
-    auto buffer = std::vector<std::byte>{};
+    auto extractor = c2k::Extractor{};
     while (socket.is_connected() and not stop_token.stop_requested()) {
-        auto received_data = socket.receive(4096).get();
-        buffer.insert(buffer.end(), received_data.begin(), received_data.end());
-        while (buffer.size() >= 4) {
-            auto num_positions = 0;
-            std::memcpy(&num_positions, buffer.data(), 4);
-            auto const packet_size = 4 + num_positions * 3 * 4;
-            while (socket.is_connected() and buffer.size() < static_cast<std::size_t>(packet_size)) {
-                if (stop_token.stop_requested()) {
-                    return;
-                }
-                received_data = socket.receive(4096).get();
-                buffer.insert(buffer.end(), received_data.begin(), received_data.end());
+        extractor << socket.receive(4096).get();
+        while (auto const package = extractor.try_extract<int>()) {
+            auto const num_positions = package.value();
+            while (socket.is_connected() and not stop_token.stop_requested()
+                   and extractor.size() < static_cast<std::size_t>(num_positions) * 3 * sizeof(int)) {
+                extractor << socket.receive(4096).get();
             }
-            // std::cout << std::format("received positions of {} clients\n", num_positions);
+            if (not socket.is_connected() or stop_token.stop_requested()) {
+                return;
+            }
             auto clients_received = std::vector<int>{};
             clients_received.reserve(static_cast<std::size_t>(num_positions));
-            // discard first four bytes
-            std::rotate(buffer.begin(), buffer.begin() + 4, buffer.end());
-            buffer.resize(buffer.size() - 4);
+            auto lock = std::scoped_lock{ positions_mutex };
             for (auto i = 0; i < num_positions; ++i) {
-                assert(buffer.size() >= 12);
-                auto client_id = 0;
-                auto x = 0;
-                auto y = 0;
-                std::memcpy(&client_id, buffer.data(), 4);
-                std::memcpy(&x, buffer.data() + 4, 4);
-                std::memcpy(&y, buffer.data() + 8, 4);
-                std::rotate(buffer.begin(), buffer.begin() + 12, buffer.end());
-                buffer.resize(buffer.size() - 12);
-                auto lock = std::scoped_lock{ positions_mutex };
+                auto const [client_id, x, y] = extractor.try_extract<int, int, int>().value();
                 client_positions[client_id] = std::pair{ x, y };
                 clients_received.push_back(client_id);
             }
@@ -62,15 +47,7 @@ static void read_incoming_positions(std::stop_token const& stop_token, c2k::Clie
 }
 
 static void send_position(c2k::ClientSocket& socket, std::pair<double, double> position) {
-    auto const x = static_cast<int>(position.first);
-    auto const y = static_cast<int>(position.second);
-    static_assert(sizeof(x) == 4);
-    static_assert(sizeof(y) == 4);
-    auto buffer = std::vector<std::byte>{};
-    buffer.resize(8);
-    std::memcpy(buffer.data(), &x, 4);
-    std::memcpy(buffer.data() + 4, &y, 4);
-    std::ignore = socket.send(std::move(buffer));
+    std::ignore = socket.send(static_cast<int>(position.first), static_cast<int>(position.second));
 }
 
 int main(int const argc, char** const argv) try {
